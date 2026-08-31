@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta
+      name="description"
+      content="A private, local-first 3D depth viewer powered by MoGe and WebGPU."
+    />
+    <title>Depth Studio</title>
+  </head>
+  <body>
+    <div id="app" class="app-shell" data-state="boot">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Depth Studio home">
+          <span class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </span>
+          <span class="brand-copy">
+            <span class="brand-name">Depth Studio</span>
+            <span class="brand-caption">MoGe / WebGPU</span>
+          </span>
+        </a>
+
+        <div class="toolbar" aria-label="Scene controls">
+          <label class="button button-primary" for="image-input">
+            <svg aria-hidden="true" viewBox="0 0 20 20" focusable="false">
+              <path d="M10 3v14M3 10h14" />
+            </svg>
+            <span>Open image</span>
+          </label>
+          <input
+            id="image-input"
+            class="visually-hidden"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+          />
+
+          <label class="control-label" for="view-mode">View</label>
+          <select id="view-mode" class="select-control" aria-label="View mode" disabled>
+            <option value="spatial">Spatial</option>
+            <option value="original">Original</option>
+            <option value="depth">Depth</option>
+            <option value="normal">Normal</option>
+            <option value="wireframe">Wireframe</option>
+            <option value="debug3d">3D Debug</option>
+          </select>
+
+          <button id="reset-view" class="button button-quiet" type="button" disabled>
+            Reset view
+          </button>
+
+          <label class="auto-toggle" for="auto-motion">
+            <input id="auto-motion" type="checkbox" checked disabled />
+            <span class="toggle-track" aria-hidden="true"><span></span></span>
+            <span>Auto</span>
+          </label>
+        </div>
+      </header>
+
+      <main class="workspace" id="workspace">
+        <section class="viewport" id="viewport" aria-label="Depth scene viewport">
+          <canvas id="scene-canvas" aria-label="Interactive depth scene"></canvas>
+
+          <div
+            class="empty-state"
+            id="drop-zone"
+            role="button"
+            tabindex="0"
+            aria-describedby="drop-description"
+          >
+            <div class="empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 48 48" focusable="false">
+                <path d="M24 32V10m0 0-8 8m8-8 8 8" />
+                <path d="M12 27v8a3 3 0 0 0 3 3h18a3 3 0 0 0 3-3v-8" />
+              </svg>
+            </div>
+            <p class="eyebrow">Local depth reconstruction</p>
+            <h1>Drop an image to begin</h1>
+            <p id="drop-description" class="empty-description">
+              Bring a JPEG, PNG, or WebP here, or choose one from your device.
+            </p>
+            <label class="button button-secondary" for="image-input">Choose image</label>
+            <p class="empty-note">Images stay in this browser. Nothing is uploaded.</p>
+          </div>
+
+          <div class="scene-guide" id="scene-guide" hidden>
+            <span>Move or drag to look around</span>
+            <span class="guide-divider" aria-hidden="true"></span>
+            <span>Subtle motion preserves the illusion</span>
+          </div>
+        </section>
+      </main>
+
+      <footer class="diagnostics-bar">
+        <div class="status-group" aria-live="polite" aria-atomic="true">
+          <span class="status-dot" id="status-dot" aria-hidden="true"></span>
+          <span class="status-state" id="status-state">Boot</span>
+          <span class="status-message" id="status-message">Starting local depth studio…</span>
+        </div>
+        <div class="diagnostics" id="diagnostics" aria-live="polite" aria-atomic="true">
+          <span class="privacy-note">Local only · WebGPU · no uploads</span>
+          <span class="metric-summary" id="metric-summary"></span>
+        </div>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
