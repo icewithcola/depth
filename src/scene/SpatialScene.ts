@@ -24,6 +24,7 @@ export interface SpatialSceneDiagnostics {
 interface SceneResources {
   geometry: THREE.BufferGeometry;
   originalGeometry: THREE.BufferGeometry;
+  backgroundGeometry: THREE.BufferGeometry;
   photoTexture: THREE.Texture;
   depthTexture: THREE.Texture;
   normalTexture: THREE.Texture;
@@ -34,7 +35,13 @@ interface SceneResources {
   originalMaterial: THREE.MeshBasicMaterial;
   mesh: THREE.Mesh;
   originalMesh: THREE.Mesh;
+  backgroundMesh: THREE.Mesh;
 }
+
+// Camera translation can reveal a few percent beyond the photographed frame.
+// Extending the far plate keeps those reveals filled; out-of-range texture
+// coordinates use Three's default ClampToEdge wrapping.
+const BACKGROUND_OVERSCAN = 0.06;
 
 function createWebGl2Renderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   const context = canvas.getContext('webgl2', {
@@ -137,7 +144,11 @@ function createDebugCanvas(result: MoGeResult, kind: 'depth' | 'normal'): HTMLCa
 }
 
 /** A full, uncut image plane that projects exactly onto the calibrated frame. */
-function createOriginalGeometry(result: MoGeResult, depth: number): THREE.BufferGeometry {
+function createImagePlaneGeometry(
+  result: MoGeResult,
+  depth: number,
+  overscan = 0,
+): THREE.BufferGeometry {
   const fx = result.intrinsics[0];
   const cx = result.intrinsics[2];
   const fy = result.intrinsics[4];
@@ -150,13 +161,21 @@ function createOriginalGeometry(result: MoGeResult, depth: number): THREE.Buffer
     -(v - cy) / fy * depth,
     -depth,
   ];
+  const minimum = -Math.max(0, overscan);
+  const maximum = 1 + Math.max(0, overscan);
   const positions = new Float32Array([
-    ...point(0, 0), ...point(0, 1), ...point(1, 0), ...point(1, 1),
+    ...point(minimum, minimum),
+    ...point(minimum, maximum),
+    ...point(maximum, minimum),
+    ...point(maximum, maximum),
   ]);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
-    0, 1, 0, 0, 1, 1, 1, 0,
+    minimum, maximum,
+    minimum, minimum,
+    maximum, maximum,
+    maximum, minimum,
   ]), 2));
   geometry.setIndex([0, 1, 2, 2, 1, 3]);
   return geometry;
@@ -301,13 +320,26 @@ export class SpatialScene {
         wireframeMaterial,
         originalMaterial,
       );
-      const originalGeometry = createOriginalGeometry(result, medianDepth);
+      const originalGeometry = createImagePlaneGeometry(result, medianDepth);
       stagedDisposables.push(originalGeometry);
+      // The depth-edge mesh intentionally contains holes. Put an uncut image
+      // plate behind all robust scene depths so motion reveals plausible photo
+      // content rather than the renderer's black clear color.
+      const backgroundDepth = nextProjection.far * 0.98;
+      const backgroundGeometry = createImagePlaneGeometry(
+        result,
+        backgroundDepth,
+        BACKGROUND_OVERSCAN,
+      );
+      stagedDisposables.push(backgroundGeometry);
       const mesh = new THREE.Mesh(geometry, photoMaterial);
       const originalMesh = new THREE.Mesh(originalGeometry, originalMaterial);
+      const backgroundMesh = new THREE.Mesh(backgroundGeometry, originalMaterial);
+      backgroundMesh.renderOrder = -1;
       nextResources = {
         geometry,
         originalGeometry,
+        backgroundGeometry,
         photoTexture,
         depthTexture,
         normalTexture,
@@ -318,6 +350,7 @@ export class SpatialScene {
         originalMaterial,
         mesh,
         originalMesh,
+        backgroundMesh,
       };
     } catch (error) {
       for (const disposable of stagedDisposables.reverse()) disposable.dispose();
@@ -328,7 +361,7 @@ export class SpatialScene {
     // decode/allocation error therefore leaves the previous photo intact.
     this.disposeResources();
     this.resources = nextResources;
-    this.scene.add(nextResources.mesh, nextResources.originalMesh);
+    this.scene.add(nextResources.backgroundMesh, nextResources.mesh, nextResources.originalMesh);
     this.projection = nextProjection;
     this.applySpatialProjection();
     this.controller = new SpatialCameraController(this.spatialCamera, {
@@ -356,6 +389,7 @@ export class SpatialScene {
     if (resources === undefined) return;
     resources.mesh.visible = mode !== 'original';
     resources.originalMesh.visible = mode === 'original';
+    resources.backgroundMesh.visible = mode === 'spatial';
     switch (mode) {
       case 'depth': resources.mesh.material = resources.depthMaterial; break;
       case 'normal': resources.mesh.material = resources.normalMaterial; break;
@@ -487,9 +521,10 @@ export class SpatialScene {
     this.controller = undefined;
     const resources = this.resources;
     if (resources === undefined) return;
-    this.scene.remove(resources.mesh, resources.originalMesh);
+    this.scene.remove(resources.backgroundMesh, resources.mesh, resources.originalMesh);
     resources.geometry.dispose();
     resources.originalGeometry.dispose();
+    resources.backgroundGeometry.dispose();
     resources.photoTexture.dispose();
     resources.depthTexture.dispose();
     resources.normalTexture.dispose();

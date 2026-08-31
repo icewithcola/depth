@@ -1,10 +1,15 @@
 import { MoGeInference } from './moge/inference';
 import type { MoGeInferenceResult, StageTimings } from './moge/types';
+import {
+  extractImageFileFromClipboardData,
+  isEditableTarget,
+  readImageFromClipboard,
+  SUPPORTED_IMAGE_TYPES,
+} from './platform/clipboard';
 import { collectWebGpuDiagnostics, formatWebGpuDiagnostics } from './platform/webgpu';
 import { SpatialScene, type ViewMode } from './scene/SpatialScene';
 
 const TEXTURE_MAX_SIDE = 2048;
-const SUPPORTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const IMAGE_ORIENTATION_OPTIONS: ImageBitmapOptions = { imageOrientation: 'from-image' };
 
 export type AppState =
@@ -18,6 +23,8 @@ export type AppState =
 interface AppElements {
   root: HTMLElement;
   fileInput: HTMLInputElement;
+  pasteButton: HTMLButtonElement;
+  dropZonePasteButton: HTMLButtonElement;
   viewMode: HTMLSelectElement;
   resetView: HTMLButtonElement;
   autoMotion: HTMLInputElement;
@@ -74,6 +81,8 @@ function collectElements(documentRef: Document): AppElements {
   return {
     root: requiredElement<HTMLElement>(documentRef, 'app'),
     fileInput: requiredElement<HTMLInputElement>(documentRef, 'image-input'),
+    pasteButton: requiredElement<HTMLButtonElement>(documentRef, 'paste-image'),
+    dropZonePasteButton: requiredElement<HTMLButtonElement>(documentRef, 'paste-image-dropzone'),
     viewMode: requiredElement<HTMLSelectElement>(documentRef, 'view-mode'),
     resetView: requiredElement<HTMLButtonElement>(documentRef, 'reset-view'),
     autoMotion: requiredElement<HTMLInputElement>(documentRef, 'auto-motion'),
@@ -278,6 +287,7 @@ function summarizeMetrics(timings: StageTimings, stats: SceneStats, totalReadyMs
 }
 
 export class DepthApp {
+  private readonly documentRef: Document;
   private readonly elements: AppElements;
   private readonly inference: MoGeInference;
   private readonly scene: SpatialScene;
@@ -298,6 +308,7 @@ export class DepthApp {
   private diagnosticRunId = 0;
 
   public constructor(documentRef: Document) {
+    this.documentRef = documentRef;
     this.elements = collectElements(documentRef);
     this.windowRef = documentRef.defaultView ?? undefined;
     this.inference = new MoGeInference();
@@ -321,6 +332,8 @@ export class DepthApp {
 
   private bindEvents(): void {
     this.elements.fileInput.addEventListener('change', this.onFileInput);
+    this.elements.pasteButton.addEventListener('click', this.onPasteButtonClick);
+    this.elements.dropZonePasteButton.addEventListener('click', this.onPasteButtonClick);
     this.elements.viewMode.addEventListener('change', this.onViewModeChange);
     this.elements.resetView.addEventListener('click', this.onResetView);
     this.elements.autoMotion.addEventListener('change', this.onAutoMotionChange);
@@ -335,6 +348,8 @@ export class DepthApp {
     this.elements.dropZone.addEventListener('dragover', this.onDragOver);
     this.elements.dropZone.addEventListener('dragleave', this.onDragLeave);
     this.elements.dropZone.addEventListener('drop', this.onDrop);
+
+    this.documentRef.addEventListener('paste', this.onPaste as EventListener);
   }
 
   private readonly onFileInput = (event: Event): void => {
@@ -347,8 +362,84 @@ export class DepthApp {
     }
   };
 
-  private readonly onDropZoneClick = (): void => {
+  private readonly onDropZoneClick = (event: MouseEvent): void => {
+    const target = event.target as Partial<HTMLElement> | null;
+    if (
+      target &&
+      ((typeof target.closest === 'function' && target.closest('#paste-image-dropzone')) ||
+        target.id === 'paste-image-dropzone')
+    ) {
+      return;
+    }
     this.elements.fileInput.click();
+  };
+
+  private readonly onPasteButtonClick = (event: Event): void => {
+    event.stopPropagation();
+    void this.pasteFromClipboard();
+  };
+
+  private readonly onPaste = (event: ClipboardEvent): void => {
+    if (this.disposed) {
+      return;
+    }
+    if (this.elements.gpuDebugDialog.open) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    if (target && isEditableTarget(target)) {
+      return;
+    }
+
+    const file = extractImageFileFromClipboardData(event.clipboardData);
+    if (file) {
+      event.preventDefault();
+      this.selectFile(file);
+      return;
+    }
+
+    if (
+      event.clipboardData &&
+      (event.clipboardData.types.length > 0 || event.clipboardData.files.length > 0)
+    ) {
+      event.preventDefault();
+      this.setError('No image found on the clipboard. Copy an image first and try again.');
+    }
+  };
+
+  public async pasteFromClipboard(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    try {
+      const file = await readImageFromClipboard(this.windowRef?.navigator.clipboard);
+      if (this.disposed) {
+        return;
+      }
+      if (!file) {
+        this.setError('No image found on the clipboard. Copy an image first and try again.');
+        return;
+      }
+      this.selectFile(file);
+    } catch (error) {
+      if (this.disposed) {
+        return;
+      }
+      const msg = errorMessage(error);
+      if (
+        (error instanceof DOMException &&
+          (error.name === 'NotAllowedError' || error.name === 'SecurityError')) ||
+        /denied|not allowed|permission/i.test(msg)
+      ) {
+        this.setError('Clipboard permission was denied. You can paste directly using Ctrl+V or Cmd+V.');
+      } else if (/not supported/i.test(msg)) {
+        this.setError(
+          'Clipboard reading is not supported by your browser. Try pasting directly using Ctrl+V or Cmd+V.',
+        );
+      } else {
+        this.setError(`Could not read clipboard (${msg}). You can paste directly using Ctrl+V or Cmd+V.`);
+      }
+    }
   };
 
   private readonly onDropZoneKeyDown = (event: KeyboardEvent): void => {
@@ -586,7 +677,7 @@ export class DepthApp {
         closeBitmap(textureResult.value);
       }
       if (inferenceResult.status === 'fulfilled') {
-        closeBitmap(inferenceResult.value.inferenceImage);
+        closeBitmap(inferenceResult.value?.inferenceImage);
       }
       return;
     }
@@ -596,7 +687,7 @@ export class DepthApp {
         closeBitmap(textureResult.value);
       }
       if (inferenceResult.status === 'fulfilled') {
-        closeBitmap(inferenceResult.value.inferenceImage);
+        closeBitmap(inferenceResult.value?.inferenceImage);
       }
       let failure: unknown;
       let textureFailed = false;
@@ -659,6 +750,8 @@ export class DepthApp {
     this.latestRequestId += 1;
     this.pendingSelection = undefined;
     this.elements.fileInput.removeEventListener('change', this.onFileInput);
+    this.elements.pasteButton.removeEventListener('click', this.onPasteButtonClick);
+    this.elements.dropZonePasteButton.removeEventListener('click', this.onPasteButtonClick);
     this.elements.viewMode.removeEventListener('change', this.onViewModeChange);
     this.elements.resetView.removeEventListener('click', this.onResetView);
     this.elements.autoMotion.removeEventListener('change', this.onAutoMotionChange);
@@ -673,6 +766,7 @@ export class DepthApp {
     this.elements.dropZone.removeEventListener('dragover', this.onDragOver);
     this.elements.dropZone.removeEventListener('dragleave', this.onDragLeave);
     this.elements.dropZone.removeEventListener('drop', this.onDrop);
+    this.documentRef.removeEventListener('paste', this.onPaste as EventListener);
     this.windowRef?.removeEventListener('pagehide', this.onPageHide);
 
     this.disposalPromise = (async () => {

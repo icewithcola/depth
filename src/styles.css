@@ -443,6 +443,14 @@ select:focus-visible,
   line-height: 1.55;
 }
 
+.empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .empty-note {
   margin: 15px 0 0;
   color: var(--dim);
@@ -712,7 +720,8 @@ select:focus-visible,
     padding-inline: 10px;
   }
 
-  .button-primary span {
+  .button-primary span,
+  #paste-image span {
     display: none;
   }
 
