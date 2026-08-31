@@ -327,16 +327,15 @@ export class DepthApp {
     }
   };
 
-  private readonly onDropZoneClick = (event: MouseEvent): void => {
-    const target = event.target;
-    if (target instanceof Element && target.closest('label,button,a,input,select')) {
-      return;
-    }
+  private readonly onDropZoneClick = (): void => {
     this.elements.fileInput.click();
   };
 
   private readonly onDropZoneKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    if (event.target !== this.elements.dropZone) {
       return;
     }
     event.preventDefault();
