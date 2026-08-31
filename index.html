@@ -56,6 +56,10 @@
             <span class="toggle-track" aria-hidden="true"><span></span></span>
             <span>Auto</span>
           </label>
+
+          <button id="gpu-debug" class="button button-quiet" type="button">
+            GPU debug
+          </button>
         </div>
       </header>
 
@@ -106,6 +110,34 @@
           <span class="metric-summary" id="metric-summary"></span>
         </div>
       </footer>
+
+      <dialog id="gpu-debug-dialog" class="debug-dialog" aria-labelledby="gpu-debug-title">
+        <div class="debug-dialog-header">
+          <div>
+            <p class="eyebrow">Runtime inspection</p>
+            <h2 id="gpu-debug-title">WebGPU diagnostics</h2>
+          </div>
+          <button id="gpu-debug-close" class="button button-quiet" type="button" aria-label="Close">
+            Close
+          </button>
+        </div>
+        <p class="debug-dialog-description">
+          These read-only probes ask Chrome for default, high-performance, and low-power adapters.
+          No photo data is accessed or uploaded.
+        </p>
+        <textarea
+          id="gpu-debug-output"
+          class="debug-output"
+          readonly
+          spellcheck="false"
+          aria-label="WebGPU diagnostic report"
+        >Press “Run probes” to collect browser diagnostics.</textarea>
+        <div class="debug-dialog-actions">
+          <span id="gpu-debug-feedback" class="debug-feedback" aria-live="polite"></span>
+          <button id="gpu-debug-run" class="button button-secondary" type="button">Run probes</button>
+          <button id="gpu-debug-copy" class="button button-quiet" type="button">Copy report</button>
+        </div>
+      </dialog>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

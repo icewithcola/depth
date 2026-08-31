@@ -1,5 +1,6 @@
 import { MoGeInference } from './moge/inference';
 import type { MoGeInferenceResult, StageTimings } from './moge/types';
+import { collectWebGpuDiagnostics, formatWebGpuDiagnostics } from './platform/webgpu';
 import { SpatialScene, type ViewMode } from './scene/SpatialScene';
 
 const TEXTURE_MAX_SIDE = 2048;
@@ -28,6 +29,13 @@ interface AppElements {
   statusState: HTMLElement;
   statusMessage: HTMLElement;
   metricSummary: HTMLElement;
+  gpuDebug: HTMLButtonElement;
+  gpuDebugDialog: HTMLDialogElement;
+  gpuDebugClose: HTMLButtonElement;
+  gpuDebugRun: HTMLButtonElement;
+  gpuDebugCopy: HTMLButtonElement;
+  gpuDebugOutput: HTMLTextAreaElement;
+  gpuDebugFeedback: HTMLElement;
 }
 
 interface PendingSelection {
@@ -77,6 +85,13 @@ function collectElements(documentRef: Document): AppElements {
     statusState: requiredElement<HTMLElement>(documentRef, 'status-state'),
     statusMessage: requiredElement<HTMLElement>(documentRef, 'status-message'),
     metricSummary: requiredElement<HTMLElement>(documentRef, 'metric-summary'),
+    gpuDebug: requiredElement<HTMLButtonElement>(documentRef, 'gpu-debug'),
+    gpuDebugDialog: requiredElement<HTMLDialogElement>(documentRef, 'gpu-debug-dialog'),
+    gpuDebugClose: requiredElement<HTMLButtonElement>(documentRef, 'gpu-debug-close'),
+    gpuDebugRun: requiredElement<HTMLButtonElement>(documentRef, 'gpu-debug-run'),
+    gpuDebugCopy: requiredElement<HTMLButtonElement>(documentRef, 'gpu-debug-copy'),
+    gpuDebugOutput: requiredElement<HTMLTextAreaElement>(documentRef, 'gpu-debug-output'),
+    gpuDebugFeedback: requiredElement<HTMLElement>(documentRef, 'gpu-debug-feedback'),
   };
 }
 
@@ -280,6 +295,7 @@ export class DepthApp {
   private hasScene = false;
   private disposed = false;
   private disposalPromise: Promise<void> | undefined;
+  private diagnosticRunId = 0;
 
   public constructor(documentRef: Document) {
     this.elements = collectElements(documentRef);
@@ -308,6 +324,10 @@ export class DepthApp {
     this.elements.viewMode.addEventListener('change', this.onViewModeChange);
     this.elements.resetView.addEventListener('click', this.onResetView);
     this.elements.autoMotion.addEventListener('change', this.onAutoMotionChange);
+    this.elements.gpuDebug.addEventListener('click', this.onGpuDebugOpen);
+    this.elements.gpuDebugClose.addEventListener('click', this.onGpuDebugClose);
+    this.elements.gpuDebugRun.addEventListener('click', this.onGpuDebugRun);
+    this.elements.gpuDebugCopy.addEventListener('click', this.onGpuDebugCopy);
 
     this.elements.dropZone.addEventListener('click', this.onDropZoneClick);
     this.elements.dropZone.addEventListener('keydown', this.onDropZoneKeyDown);
@@ -396,6 +416,57 @@ export class DepthApp {
     }
   };
 
+  private readonly onGpuDebugOpen = (): void => {
+    this.elements.gpuDebugDialog.showModal();
+    void this.runGpuDiagnostics();
+  };
+
+  private readonly onGpuDebugClose = (): void => {
+    this.elements.gpuDebugDialog.close();
+  };
+
+  private readonly onGpuDebugRun = (): void => {
+    void this.runGpuDiagnostics();
+  };
+
+  private readonly onGpuDebugCopy = (): void => {
+    const output = this.elements.gpuDebugOutput;
+    void navigator.clipboard.writeText(output.value).then(
+      () => {
+        this.elements.gpuDebugFeedback.textContent = 'Copied.';
+      },
+      () => {
+        output.focus();
+        output.select();
+        this.elements.gpuDebugFeedback.textContent = 'Select all and copy manually.';
+      },
+    );
+  };
+
+  private async runGpuDiagnostics(): Promise<void> {
+    const runId = this.diagnosticRunId + 1;
+    this.diagnosticRunId = runId;
+    this.elements.gpuDebugRun.disabled = true;
+    this.elements.gpuDebugFeedback.textContent = 'Probing adapters…';
+    this.elements.gpuDebugOutput.value = 'Collecting WebGPU diagnostics…';
+    try {
+      const report = await collectWebGpuDiagnostics();
+      if (this.disposed || runId !== this.diagnosticRunId) return;
+      this.elements.gpuDebugOutput.value = formatWebGpuDiagnostics(report);
+      const available = report.probes.filter((probe) => probe.outcome === 'available').length;
+      this.elements.gpuDebugFeedback.textContent = `${available}/${report.probes.length} adapter probes available.`;
+    } catch (error) {
+      if (this.disposed || runId !== this.diagnosticRunId) return;
+      this.elements.gpuDebugOutput.value = `Diagnostic collection failed: ${errorMessage(error)}`;
+      this.elements.gpuDebugFeedback.textContent = 'Probe failed.';
+      reportError('WebGPU diagnostics failed', error);
+    } finally {
+      if (!this.disposed && runId === this.diagnosticRunId) {
+        this.elements.gpuDebugRun.disabled = false;
+      }
+    }
+  }
+
   private setSceneControls(enabled: boolean): void {
     this.elements.viewMode.disabled = !enabled;
     this.elements.resetView.disabled = !enabled;
@@ -439,7 +510,10 @@ export class DepthApp {
       this.modelError = true;
       this.pendingSelection = undefined;
       reportError('Model loading failed', error);
-      this.setError(formatModelError(error));
+      const message = isWebGpuError(error)
+        ? `${formatModelError(error)} Open GPU debug for adapter details.`
+        : formatModelError(error);
+      this.setError(message);
     }
   }
 
@@ -588,6 +662,11 @@ export class DepthApp {
     this.elements.viewMode.removeEventListener('change', this.onViewModeChange);
     this.elements.resetView.removeEventListener('click', this.onResetView);
     this.elements.autoMotion.removeEventListener('change', this.onAutoMotionChange);
+    this.elements.gpuDebug.removeEventListener('click', this.onGpuDebugOpen);
+    this.elements.gpuDebugClose.removeEventListener('click', this.onGpuDebugClose);
+    this.elements.gpuDebugRun.removeEventListener('click', this.onGpuDebugRun);
+    this.elements.gpuDebugCopy.removeEventListener('click', this.onGpuDebugCopy);
+    this.diagnosticRunId += 1;
     this.elements.dropZone.removeEventListener('click', this.onDropZoneClick);
     this.elements.dropZone.removeEventListener('keydown', this.onDropZoneKeyDown);
     this.elements.dropZone.removeEventListener('dragenter', this.onDragEnter);

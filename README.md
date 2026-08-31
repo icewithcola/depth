@@ -31,6 +31,10 @@ npm run model:download
 npm run dev
 ```
 
+The development server uses a self-signed HTTPS certificate so WebGPU can run from a non-localhost hostname. Open the printed `https://...:5173` URL and accept the browser's one-time local certificate warning.
+
+If Chrome on Linux exposes `navigator.gpu` but returns no adapter, open **GPU debug** in the app and inspect `chrome://gpu`. Unsupported or blocklisted Linux configurations may require enabling `chrome://flags/#ignore-gpu-blocklist` and relaunching Chrome. This is a local diagnostic override; the app never falls back from the WebGPU execution provider.
+
 Without Nix, use Node 24 and run the same npm commands. The official FP32 `Ruicheng/moge-2-vits-normal-onnx` asset is downloaded to `public/models/moge-2-vits-normal.onnx`; the large binary is ignored by Git.
 
 Checks and production build:
