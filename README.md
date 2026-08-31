@@ -57,4 +57,5 @@ The core MVP limitation is single-view disocclusion: a photograph contains no su
 
 ## License
 
-The application source is available under the [MIT License](./LICENSE). MoGe-2 model weights and third-party packages remain subject to their respective upstream licenses.
+The application source is available under the [MIT License](./LICENSE) and the [VibeCoded AI-Slop License v1.0](./LICENSE). MoGe-2 model weights and third-party packages remain subject to their respective upstream licenses.
+
