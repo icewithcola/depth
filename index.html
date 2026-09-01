@@ -34,7 +34,7 @@
             id="image-input"
             class="visually-hidden"
             type="file"
-            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+            accept="image/jpeg,image/png,image/webp,image/avif,.jpg,.jpeg,.png,.webp,.avif"
           />
 
           <button
@@ -97,12 +97,12 @@
             <p class="eyebrow">Local depth reconstruction</p>
             <h1>Drop an image to begin</h1>
             <p id="drop-description" class="empty-description">
-              Bring a JPEG, PNG, or WebP here, paste from clipboard, or choose one from your device.
+              Bring a JPEG, PNG, WebP, or AVIF here, paste from clipboard, or choose one from your device.
             </p>
             <div class="empty-actions">
-              <button id="choose-image" class="button button-secondary" type="button">
+              <label class="button button-secondary" id="choose-image" for="image-input">
                 Choose image
-              </button>
+              </label>
               <button id="paste-image-dropzone" class="button button-quiet" type="button">
                 <svg aria-hidden="true" viewBox="0 0 20 20" focusable="false">
                   <path d="M8 2h4a1 1 0 0 1 1 1v1H7V3a1 1 0 0 1 1-1Z" />

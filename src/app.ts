@@ -4,6 +4,7 @@ import {
   extractImageFileFromClipboardData,
   isEditableTarget,
   readImageFromClipboard,
+  SUPPORTED_EXTENSION_REGEX,
   SUPPORTED_IMAGE_TYPES,
 } from './platform/clipboard';
 import { collectWebGpuDiagnostics, formatWebGpuDiagnostics } from './platform/webgpu';
@@ -75,6 +76,19 @@ function requiredElement<T extends HTMLElement>(documentRef: Document, id: strin
     throw new Error(`Depth Studio is missing required element '#${id}'.`);
   }
   return element as T;
+}
+
+const DROP_ZONE_ACTION_CONTROL_SELECTOR = '#choose-image, #paste-image-dropzone';
+
+function isDropZoneActionControl(target: EventTarget | null): boolean {
+  if (!target) {
+    return false;
+  }
+  const element = target as Partial<Element>;
+  if (typeof element.closest === 'function') {
+    return element.closest(DROP_ZONE_ACTION_CONTROL_SELECTOR) !== null;
+  }
+  return element.id === 'choose-image' || element.id === 'paste-image-dropzone';
 }
 
 function collectElements(documentRef: Document): AppElements {
@@ -234,7 +248,7 @@ function formatProcessingError(error: unknown, textureFailed: boolean): string {
     return 'The browser ran out of memory. Try a smaller image or close other tabs.';
   }
   if (textureFailed || /decode|bitmap|image texture|image data/i.test(errorMessage(error))) {
-    return 'That image could not be decoded. Choose a valid JPEG, PNG, or WebP image.';
+    return 'That image could not be decoded. Choose a valid JPEG, PNG, WebP, or AVIF image.';
   }
   if (isWebGpuError(error)) {
     return 'WebGPU stopped responding while estimating depth. Reload and try again.';
@@ -244,9 +258,9 @@ function formatProcessingError(error: unknown, textureFailed: boolean): string {
 
 function validateFile(file: File): string | undefined {
   const mime = file.type.trim().toLowerCase();
-  const supportedExtension = /\.(?:jpe?g|png|webp)$/i.test(file.name);
+  const supportedExtension = SUPPORTED_EXTENSION_REGEX.test(file.name);
   if (!SUPPORTED_IMAGE_TYPES.has(mime) && !(mime === '' && supportedExtension)) {
-    return 'Unsupported image type. Choose a JPEG, PNG, or WebP image.';
+    return 'Unsupported image type. Choose a JPEG, PNG, WebP, or AVIF image.';
   }
   if (file.size <= 0) {
     return 'That image file is empty. Choose a different image.';
@@ -363,12 +377,7 @@ export class DepthApp {
   };
 
   private readonly onDropZoneClick = (event: MouseEvent): void => {
-    const target = event.target as Partial<HTMLElement> | null;
-    if (
-      target &&
-      ((typeof target.closest === 'function' && target.closest('#paste-image-dropzone')) ||
-        target.id === 'paste-image-dropzone')
-    ) {
+    if (isDropZoneActionControl(event.target)) {
       return;
     }
     this.elements.fileInput.click();

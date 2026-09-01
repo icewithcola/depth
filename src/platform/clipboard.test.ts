@@ -25,6 +25,9 @@ describe('clipboard utilities', () => {
 
       const fileWebp = new File(['content'], 'graphic', { type: 'image/webp' });
       expect(ensureNamedFile(fileWebp).name).toBe('graphic.webp');
+
+      const fileAvif = new File(['content'], 'photo', { type: 'image/avif' });
+      expect(ensureNamedFile(fileAvif).name).toBe('photo.avif');
     });
 
     it('generates a default clipboard name when filename is empty', () => {
@@ -33,6 +36,9 @@ describe('clipboard utilities', () => {
 
       const fileJpg = new File(['content'], '', { type: 'image/jpeg' });
       expect(ensureNamedFile(fileJpg).name).toBe('clipboard.jpg');
+
+      const fileAvif = new File(['content'], '', { type: 'image/avif' });
+      expect(ensureNamedFile(fileAvif).name).toBe('clipboard.avif');
     });
   });
 

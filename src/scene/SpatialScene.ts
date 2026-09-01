@@ -231,9 +231,13 @@ export class SpatialScene {
     this.controller?.onPointerMove(this.localPointer(event));
   };
   private readonly onPointerDown = (event: PointerEvent): void => {
-    if (this.viewMode !== 'spatial') return;
+    // Overlay controls (empty-state buttons, labels) live inside the viewport.
+    // Capturing those pointerdowns retargets click/paste away from them.
+    if (this.viewMode !== 'spatial' || !this.controller || event.target !== this.canvas) {
+      return;
+    }
     this.viewportElement.setPointerCapture(event.pointerId);
-    this.controller?.onPointerDown(this.localPointer(event));
+    this.controller.onPointerDown(this.localPointer(event));
   };
   private readonly onPointerUp = (event: PointerEvent): void => {
     this.controller?.onPointerUp(this.localPointer(event));

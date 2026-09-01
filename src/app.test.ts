@@ -87,7 +87,12 @@ function createMockElement(id: string, tagName: string = 'div'): HTMLElement {
       this.open = false;
     }),
     closest: vi.fn((selector: string) => {
-      if (selector === '#paste-image-dropzone' && id === 'paste-image-dropzone') {
+      const ids = selector
+        .split(',')
+        .map((part) => part.trim())
+        .filter((part) => part.startsWith('#'))
+        .map((part) => part.slice(1));
+      if (ids.includes(id)) {
         return el as HTMLElement;
       }
       return null;

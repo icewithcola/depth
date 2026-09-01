@@ -2,9 +2,10 @@ export const SUPPORTED_IMAGE_TYPES: ReadonlySet<string> = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
+  'image/avif',
 ]);
 
-const SUPPORTED_EXTENSION_REGEX = /\.(?:jpe?g|png|webp)$/i;
+export const SUPPORTED_EXTENSION_REGEX = /\.(?:jpe?g|png|webp|avif)$/i;
 
 function mimeToExtension(mime: string): string {
   switch (mime.toLowerCase()) {
@@ -13,6 +14,8 @@ function mimeToExtension(mime: string): string {
       return 'jpg';
     case 'image/webp':
       return 'webp';
+    case 'image/avif':
+      return 'avif';
     case 'image/png':
     default:
       return 'png';
