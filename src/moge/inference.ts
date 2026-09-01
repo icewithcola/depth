@@ -11,7 +11,8 @@ import type {
 } from './types';
 
 export const DEFAULT_MOGE_MODEL_URL =
-  import.meta.env.VITE_MOGE_MODEL_URL || '/models/moge-2-vits-normal.onnx';
+  import.meta.env.VITE_MOGE_MODEL_URL ||
+  'https://huggingface.co/Ruicheng/moge-2-vits-normal-onnx/resolve/e50ffda41565591092adea54c6ac83d6212e1e23/model.onnx';
 export const DEFAULT_MOGE_NUM_TOKENS = 1800;
 
 const EXPECTED_INPUT_NAMES = ['image', 'num_tokens'] as const;

@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises';
 
 /** The upstream ONNX export published by the MoGe authors. */
 export const MODEL_URL =
-  'https://huggingface.co/Ruicheng/moge-2-vits-normal-onnx/resolve/main/model.onnx';
+  'https://huggingface.co/Ruicheng/moge-2-vits-normal-onnx/resolve/e50ffda41565591092adea54c6ac83d6212e1e23/model.onnx';
 export const MODEL_PATH = resolve(
   process.cwd(),
   'public',

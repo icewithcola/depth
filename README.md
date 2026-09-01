@@ -25,27 +25,38 @@ Safari and Firefox are not MVP targets.
 With Nix:
 
 ```sh
-nix develop
-npm install
-npm run model:download
-npm run dev
+nix develop --command npm install
+nix develop --command npm run dev
 ```
 
 The development server uses a self-signed HTTPS certificate so WebGPU can run from a non-localhost hostname. Open the printed `https://...:5173` URL and accept the browser's one-time local certificate warning.
 
 If Chrome on Linux exposes `navigator.gpu` but returns no adapter, open **GPU debug** in the app and inspect `chrome://gpu`. Unsupported or blocklisted Linux configurations may require enabling `chrome://flags/#ignore-gpu-blocklist` and relaunching Chrome. This is a local diagnostic override; the app never falls back from the WebGPU execution provider.
 
-Without Nix, use Node 24 and run the same npm commands. The official FP32 `Ruicheng/moge-2-vits-normal-onnx` asset is downloaded to `public/models/moge-2-vits-normal.onnx`; the large binary is ignored by Git.
+The official 141 MB FP32 `Ruicheng/moge-2-vits-normal-onnx` asset is loaded directly from Hugging Face's CDN. The URL is pinned to an immutable model revision, and the CDN serves the content-addressed file with byte-range support. Images stay in the browser; only the public model file is downloaded.
+
+For offline development or self-hosting, download the same model to the Git-ignored `public/models/moge-2-vits-normal.onnx` path and override its URL:
+
+```sh
+nix develop --command npm run model:download
+VITE_MOGE_MODEL_URL=/models/moge-2-vits-normal.onnx nix develop --command npm run dev
+```
 
 Checks and production build:
 
 ```sh
-npm test
-npm run typecheck
-npm run build
+nix develop --command npm test
+nix develop --command npm run typecheck
+nix develop --command npm run build
 ```
 
-`dist/` is static-hostable. If `VITE_MOGE_MODEL_URL` is set at build time, it replaces the default `/models/moge-2-vits-normal.onnx` URL. Configure the static host to serve the ONNX file and WebAssembly with their normal binary MIME types and effective caching.
+`dist/` is static-hostable. `VITE_MOGE_MODEL_URL` can replace the default CDN URL at build time, and `VITE_BASE_PATH` sets Vite's public base path.
+
+## GitHub Pages
+
+The `Deploy to GitHub Pages` workflow checks, builds, and deploys the site whenever `master` is pushed, and it can also be run manually. It reads the Pages base path from GitHub, so both the default `/depth/` project URL and a configured custom domain resolve bundled assets correctly.
+
+In the repository's **Settings → Pages**, set **Source** to **GitHub Actions** once. The workflow does not store the 141 MB model in GitHub or the Pages artifact; deployed browsers fetch the revision-pinned model from Hugging Face's CDN.
 
 ## Notes
 
@@ -58,4 +69,3 @@ The core MVP limitation is single-view disocclusion: a photograph contains no su
 ## License
 
 The application source is available under the [MIT License](./LICENSE) and the [VibeCoded AI-Slop License v1.0](./LICENSE). MoGe-2 model weights and third-party packages remain subject to their respective upstream licenses.
-
