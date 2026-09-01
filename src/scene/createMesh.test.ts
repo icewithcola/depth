@@ -4,6 +4,7 @@ import {
   convertOpenCvNormalToThree,
   convertOpenCvPointToThree,
   createMeshData,
+  largestConnectedComponentMask,
 } from './createMesh';
 
 function makeResult(width: number, height: number, depths?: ArrayLike<number>, mask?: Uint8Array): MoGeResult {
@@ -30,6 +31,94 @@ function makeResult(width: number, height: number, depths?: ArrayLike<number>, m
 }
 
 describe('createMeshData', () => {
+  it('keeps the largest four-connected source component before downsampling', () => {
+    const width = 7;
+    const height = 4;
+    const mask = new Uint8Array([
+      1, 1, 1, 0, 0, 0, 0,
+      1, 1, 1, 0, 1, 1, 0,
+      1, 1, 1, 0, 1, 1, 0,
+      0, 0, 0, 0, 0, 0, 0,
+    ]);
+    const mesh = createMeshData(makeResult(width, height, undefined, mask), {
+      step: 1,
+      removeDepthEdges: false,
+    });
+
+    expect(Array.from(mesh.validMask)).toEqual([
+      1, 1, 1, 0, 0, 0, 0,
+      1, 1, 1, 0, 0, 0, 0,
+      1, 1, 1, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0,
+    ]);
+    expect(mesh.vertexCount).toBe(9);
+    expect(mesh.triangleCount).toBe(8);
+  });
+
+  it('uses the first row-major component when areas tie and does not merge diagonals', () => {
+    const tie = largestConnectedComponentMask(
+      new Uint8Array([
+        1, 1, 0, 1, 1,
+        1, 1, 0, 1, 1,
+      ]),
+      5,
+      2,
+    );
+    expect(Array.from(tie)).toEqual([
+      1, 1, 0, 0, 0,
+      1, 1, 0, 0, 0,
+    ]);
+
+    const diagonal = largestConnectedComponentMask(
+      new Uint8Array([
+        1, 0,
+        0, 1,
+      ]),
+      2,
+      2,
+    );
+    expect(Array.from(diagonal)).toEqual([1, 0, 0, 0]);
+    expect(Array.from(largestConnectedComponentMask(
+      new Uint8Array([1, 0, 0, 1]),
+      2,
+      2,
+      8,
+    ))).toEqual([1, 0, 0, 1]);
+  });
+
+  it('returns an empty selection for an empty mask and preserves thin winners', () => {
+    expect(Array.from(largestConnectedComponentMask(new Uint8Array(6), 3, 2))).toEqual([
+      0, 0, 0,
+      0, 0, 0,
+    ]);
+
+    const thin = new Uint8Array([
+      1, 0, 0, 0,
+      1, 0, 0, 0,
+      1, 1, 0, 1,
+    ]);
+    expect(Array.from(largestConnectedComponentMask(thin, 4, 3))).toEqual([
+      1, 0, 0, 0,
+      1, 0, 0, 0,
+      1, 1, 0, 0,
+    ]);
+  });
+
+  it('builds components from renderable pixels, so invalid geometry cannot bridge subjects', () => {
+    const depths = new Float32Array([
+      1, 1, 1, Number.NaN, 1, 1, 1,
+      1, 1, 1, Number.NaN, 1, 1, 1,
+    ]);
+    const mesh = createMeshData(makeResult(7, 2, depths), {
+      step: 1,
+      removeDepthEdges: false,
+    });
+    expect(Array.from(mesh.validMask)).toEqual([
+      1, 1, 1, 0, 0, 0, 0,
+      1, 1, 1, 0, 0, 0, 0,
+    ]);
+  });
+
   it('converts OpenCV positions/normals and keeps OpenGL UV orientation', () => {
     expect(Array.from(convertOpenCvPointToThree([1, 2, 3]))).toEqual([1, -2, -3]);
     expect(Array.from(convertOpenCvNormalToThree([0, 1, 0]))).toEqual([0, -1, 0]);

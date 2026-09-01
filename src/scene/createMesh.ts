@@ -18,7 +18,15 @@ export interface CreateMeshOptions {
   rtol?: number;
   /** Remove source pixels marked by depthMapEdge. Defaults to true. */
   removeDepthEdges?: boolean;
+  /**
+   * Pixel connectivity used when keeping the largest renderable component.
+   * Four-neighbour connectivity is the default so diagonal contact does not
+   * merge otherwise separate subjects.
+   */
+  componentConnectivity?: ComponentConnectivity;
 }
+
+export type ComponentConnectivity = 4 | 8;
 
 export interface MeshBuildStats {
   vertexCount: number;
@@ -50,7 +58,7 @@ export interface MeshData {
   normal?: Float32Array;
   /** Full-resolution 0/1 edge mask used while constructing the mesh. */
   depthEdgeMask: Uint8Array;
-  /** Full-resolution source mask after finite/positive/depth-edge checks. */
+  /** Full-resolution mask of the largest renderable component. */
   validMask: Uint8Array;
   /** Source rows and columns represented by each sample row/column. */
   sampleRows: Uint32Array;
@@ -129,6 +137,90 @@ function finitePoint(points: ArrayLike<number>, offset: number): boolean {
   const z = points[offset + 2];
   return x !== undefined && y !== undefined && z !== undefined
     && Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z);
+}
+
+function activeMaskValue(value: number | boolean | undefined): boolean {
+  return value !== undefined && Boolean(value);
+}
+
+/**
+ * Keep only the largest connected component in a row-major binary mask.
+ *
+ * The scan order makes ties deterministic: when two components have the same
+ * area, the one whose first pixel occurs first in row-major order wins. The
+ * returned mask is always a fresh Uint8Array and therefore can safely be
+ * modified by a caller without changing the source mask.
+ */
+export function largestConnectedComponentMask(
+  mask: ArrayLike<number | boolean>,
+  width: number,
+  height: number,
+  connectivity: ComponentConnectivity = 4,
+): Uint8Array {
+  if (!Number.isInteger(width) || width < 0 || !Number.isInteger(height) || height < 0) {
+    throw new RangeError(`Component mask dimensions must be non-negative integers; got ${width}x${height}`);
+  }
+  if (connectivity !== 4 && connectivity !== 8) {
+    throw new RangeError(`Component connectivity must be 4 or 8; got ${connectivity}`);
+  }
+  const pixelCount = width * height;
+  if (mask.length < pixelCount) {
+    throw new RangeError(`Component mask has ${mask.length} values, expected at least ${pixelCount}`);
+  }
+
+  const selected = new Uint8Array(pixelCount);
+  if (pixelCount === 0) return selected;
+
+  const visited = new Uint8Array(pixelCount);
+  // The queue also stores the members in discovery order. Once a component is
+  // exhausted, queue[0..tail) is its complete pixel list and can be copied to
+  // `selected` if it is larger than the current winner.
+  const queue = new Int32Array(pixelCount);
+  let largestSize = 0;
+
+  const enqueue = (index: number, tail: { value: number }): void => {
+    if (visited[index] !== 0 || !activeMaskValue(mask[index])) return;
+    visited[index] = 1;
+    queue[tail.value] = index;
+    tail.value += 1;
+  };
+
+  for (let start = 0; start < pixelCount; start += 1) {
+    if (visited[start] !== 0 || !activeMaskValue(mask[start])) continue;
+
+    const tail = { value: 1 };
+    queue[0] = start;
+    visited[start] = 1;
+    let head = 0;
+    while (head < tail.value) {
+      const index = queue[head] ?? 0;
+      head += 1;
+      const row = Math.floor(index / width);
+      const column = index - row * width;
+
+      if (column > 0) enqueue(index - 1, tail);
+      if (column + 1 < width) enqueue(index + 1, tail);
+      if (row > 0) enqueue(index - width, tail);
+      if (row + 1 < height) enqueue(index + width, tail);
+
+      if (connectivity === 8) {
+        if (row > 0 && column > 0) enqueue(index - width - 1, tail);
+        if (row > 0 && column + 1 < width) enqueue(index - width + 1, tail);
+        if (row + 1 < height && column > 0) enqueue(index + width - 1, tail);
+        if (row + 1 < height && column + 1 < width) enqueue(index + width + 1, tail);
+      }
+    }
+
+    if (tail.value <= largestSize) continue;
+    selected.fill(0);
+    for (let member = 0; member < tail.value; member += 1) {
+      const index = queue[member];
+      if (index !== undefined) selected[index] = 1;
+    }
+    largestSize = tail.value;
+  }
+
+  return selected;
 }
 
 function validSourcePixel(
@@ -211,6 +303,21 @@ export function createMeshData(result: MoGeResult, options: CreateMeshOptions = 
   let depthEdgeCount = 0;
   for (const edge of edgeMask) depthEdgeCount += edge;
 
+  // Select the subject at full source resolution before regular sampling.
+  // Connectivity is based on pixels that can actually become mesh vertices;
+  // this lets depth-edge cuts separate adjacent surfaces and prevents invalid
+  // model sentinels from contributing to a component's area.
+  const renderableMask = new Uint8Array(pixelCount);
+  for (let index = 0; index < pixelCount; index += 1) {
+    renderableMask[index] = validSourcePixel(result, index, edgeMask, removeDepthEdges) ? 1 : 0;
+  }
+  const validMask = largestConnectedComponentMask(
+    renderableMask,
+    width,
+    height,
+    options.componentConnectivity ?? 4,
+  );
+
   const sampleColumns = makeSampleIndices(width, step);
   const sampleRows = makeSampleIndices(height, step);
   const sampleWidth = sampleColumns.length;
@@ -241,7 +348,7 @@ export function createMeshData(result: MoGeResult, options: CreateMeshOptions = 
       const column = sampleColumns[sampleColumn];
       if (column === undefined) continue;
       const sourceIndex = row * width + column;
-      if (!validSourcePixel(result, sourceIndex, edgeMask, removeDepthEdges)) continue;
+      if (validMask[sourceIndex] !== 1) continue;
 
       const pointOffset = sourceIndex * 3;
       const point = convertOpenCvPointToThree(result.points.subarray(pointOffset, pointOffset + 3));
@@ -360,9 +467,7 @@ export function createMeshData(result: MoGeResult, options: CreateMeshOptions = 
     index: indices,
     ...(normals === undefined ? {} : { normals, normal: normals }),
     depthEdgeMask: edgeMask,
-    validMask: Uint8Array.from(Array.from({ length: pixelCount }, (_, index) => (
-      validSourcePixel(result, index, edgeMask, removeDepthEdges) ? 1 : 0
-    ))),
+    validMask,
     sampleRows,
     sampleColumns,
     stats,
