@@ -138,6 +138,139 @@ export const computeDepthEdgeMask = depthMapEdge;
 export const depth_map_edge = depthMapEdge;
 export const createDepthEdgeMask = depthMapEdge;
 
+export const DEFAULT_NORMAL_EDGE_DEGREES = 5;
+
+export interface NormalEdgeOptions {
+  width: number;
+  height: number;
+  /** Angular threshold in degrees. Defaults to 5 degrees. */
+  angleDegrees?: number;
+  /** Odd neighbourhood size. Defaults to 3. */
+  kernelSize?: number;
+  /** Optional validity mask. Falsy entries are ignored as neighbours. */
+  mask?: ArrayLike<number | boolean>;
+}
+
+interface NormalizedNormalEdgeOptions {
+  width: number;
+  height: number;
+  angleDegrees: number;
+  kernelSize: number;
+  mask?: ArrayLike<number | boolean>;
+}
+
+function normalLength(normals: ArrayLike<number>, offset: number): number {
+  const x = normals[offset];
+  const y = normals[offset + 1];
+  const z = normals[offset + 2];
+  if (x === undefined || y === undefined || z === undefined
+    || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return 0;
+  return Math.hypot(x, y, z);
+}
+
+/**
+ * Compute a normal-discontinuity mask for an interleaved HWC normal map.
+ *
+ * A pixel is an edge when any valid normal in its centred neighbourhood is
+ * farther away than the angular threshold.  Normals are normalized before
+ * comparison, so small model-output magnitude errors do not become edges.
+ */
+export function normalMapEdge(
+  normals: ArrayLike<number>,
+  width: number,
+  height: number,
+  angleDegrees?: number,
+  mask?: ArrayLike<number | boolean>,
+): Uint8Array;
+export function normalMapEdge(normals: ArrayLike<number>, options: NormalEdgeOptions): Uint8Array;
+export function normalMapEdge(
+  normals: ArrayLike<number>,
+  widthOrOptions: number | NormalEdgeOptions,
+  height?: number,
+  angleDegrees = DEFAULT_NORMAL_EDGE_DEGREES,
+  mask?: ArrayLike<number | boolean>,
+): Uint8Array {
+  const options: NormalizedNormalEdgeOptions = typeof widthOrOptions === 'number'
+    ? {
+        width: widthOrOptions,
+        height: height ?? 0,
+        angleDegrees,
+        kernelSize: 3,
+        ...(mask === undefined ? {} : { mask }),
+      }
+    : {
+        width: widthOrOptions.width,
+        height: widthOrOptions.height,
+        angleDegrees: widthOrOptions.angleDegrees ?? DEFAULT_NORMAL_EDGE_DEGREES,
+        kernelSize: widthOrOptions.kernelSize ?? 3,
+        ...(widthOrOptions.mask === undefined ? {} : { mask: widthOrOptions.mask }),
+      };
+
+  const { width, height: mapHeight } = options;
+  if (!Number.isInteger(width) || width < 0 || !Number.isInteger(mapHeight) || mapHeight < 0) {
+    throw new RangeError(`Normal map dimensions must be non-negative integers; got ${width}x${mapHeight}`);
+  }
+  const pixelCount = width * mapHeight;
+  if (normals.length < pixelCount * 3) {
+    throw new RangeError(`Normal map has ${normals.length} values, expected at least ${pixelCount * 3}`);
+  }
+
+  const result = new Uint8Array(pixelCount);
+  if (width === 0 || mapHeight === 0 || !Number.isFinite(options.angleDegrees)) return result;
+  const requestedKernel = Number.isFinite(options.kernelSize)
+    ? Math.max(1, Math.floor(options.kernelSize))
+    : 3;
+  const kernelSize = requestedKernel % 2 === 0 ? requestedKernel + 1 : requestedKernel;
+  const radius = Math.floor(kernelSize / 2);
+  // Normal angular distance is in [0, 180] degrees. Clamping also keeps the
+  // cosine comparison equivalent to acos(dot) for out-of-range input.
+  const threshold = Math.min(180, Math.max(0, options.angleDegrees)) * Math.PI / 180;
+  const cosThreshold = Math.cos(threshold);
+  const isValid = (index: number): boolean => {
+    if (options.mask !== undefined && !Boolean(options.mask[index])) return false;
+    return normalLength(normals, index * 3) > 1e-12;
+  };
+
+  for (let row = 0; row < mapHeight; row += 1) {
+    for (let column = 0; column < width; column += 1) {
+      const centerIndex = row * width + column;
+      if (!isValid(centerIndex)) continue;
+      const centerOffset = centerIndex * 3;
+      const centerLength = normalLength(normals, centerOffset);
+      const centerX = (normals[centerOffset] ?? 0) / centerLength;
+      const centerY = (normals[centerOffset + 1] ?? 0) / centerLength;
+      const centerZ = (normals[centerOffset + 2] ?? 0) / centerLength;
+      const rowStart = Math.max(0, row - radius);
+      const rowEnd = Math.min(mapHeight - 1, row + radius);
+      const columnStart = Math.max(0, column - radius);
+      const columnEnd = Math.min(width - 1, column + radius);
+      for (let neighbourRow = rowStart; neighbourRow <= rowEnd; neighbourRow += 1) {
+        for (let neighbourColumn = columnStart; neighbourColumn <= columnEnd; neighbourColumn += 1) {
+          const neighbourIndex = neighbourRow * width + neighbourColumn;
+          if (!isValid(neighbourIndex)) continue;
+          const neighbourOffset = neighbourIndex * 3;
+          const neighbourNormalLength = normalLength(normals, neighbourOffset);
+          const dot = Math.max(-1, Math.min(1, (
+            centerX * (normals[neighbourOffset] ?? 0)
+            + centerY * (normals[neighbourOffset + 1] ?? 0)
+            + centerZ * (normals[neighbourOffset + 2] ?? 0)
+          ) / neighbourNormalLength));
+          if (dot < cosThreshold) {
+            result[centerIndex] = 1;
+            break;
+          }
+        }
+        if (result[centerIndex] !== 0) break;
+      }
+    }
+  }
+  return result;
+}
+
+export const computeNormalEdgeMask = normalMapEdge;
+export const normal_map_edge = normalMapEdge;
+export const createNormalEdgeMask = normalMapEdge;
+
 /**
  * Symmetric relative depth difference used for the final triangle-local
  * guard.  Dividing by the smaller positive depth rejects both sides of a

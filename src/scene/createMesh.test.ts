@@ -154,4 +154,17 @@ describe('createMeshData', () => {
     expect(masked.stats.triangleCount).toBe(0);
     expect(masked.positions.length).toBe(0);
   });
+
+  it('keeps flat-normal depth boundaries without removing both sides of the edge', () => {
+    const result = makeResult(4, 2, [1, 1, 2, 2, 1, 1, 2, 2]);
+    result.normals = new Float32Array(result.points.length);
+    for (let index = 0; index < result.normals.length; index += 3) result.normals[index + 2] = 1;
+
+    const mesh = createMeshData(result, { step: 1 });
+
+    expect(Array.from(mesh.depthEdgeMask)).toEqual(new Array(8).fill(0));
+    // The two triangles on each side survive; only the two crossing triangles
+    // are rejected by the depth-local guard.
+    expect(mesh.triangleCount).toBe(4);
+  });
 });

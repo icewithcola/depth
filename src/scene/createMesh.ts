@@ -3,6 +3,7 @@ import {
   DEFAULT_DEPTH_RTOL,
   depthMapEdge,
   depthsWithinRelativeTolerance,
+  normalMapEdge,
 } from './depthEdges';
 
 export interface CreateMeshOptions {
@@ -300,6 +301,16 @@ export function createMeshData(result: MoGeResult, options: CreateMeshOptions = 
     rtol: depthRtol,
     mask: result.mask,
   });
+  if (removeDepthEdges && result.normals !== undefined) {
+    const normalEdgeMask = normalMapEdge(result.normals, {
+      width,
+      height,
+      mask: result.mask,
+    });
+    for (let index = 0; index < edgeMask.length; index += 1) {
+      edgeMask[index] = edgeMask[index] === 1 && normalEdgeMask[index] === 1 ? 1 : 0;
+    }
+  }
   let depthEdgeCount = 0;
   for (const edge of edgeMask) depthEdgeCount += edge;
 

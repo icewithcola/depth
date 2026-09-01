@@ -3,6 +3,7 @@ import {
   DEFAULT_DEPTH_RTOL,
   depthMapEdge,
   depthsWithinRelativeTolerance,
+  normalMapEdge,
   relativeDepthDifference,
 } from './depthEdges';
 
@@ -24,5 +25,21 @@ describe('depthMapEdge', () => {
     expect(depthsWithinRelativeTolerance(1, 1.04, 0.04)).toBe(true);
     expect(depthsWithinRelativeTolerance(1, 1.05, 0.04)).toBe(false);
     expect(relativeDepthDifference(0, 1)).toBe(Infinity);
+  });
+
+  it('marks angular normal discontinuities while keeping flat normals smooth', () => {
+    const flat = new Float32Array([
+      0, 0, 1,
+      0, 0, 1,
+      0, 0, 1,
+    ]);
+    expect(Array.from(normalMapEdge(flat, { width: 3, height: 1 }))).toEqual([0, 0, 0]);
+
+    const crease = new Float32Array([
+      0, 0, 1,
+      1, 0, 0,
+      0, 0, 1,
+    ]);
+    expect(Array.from(normalMapEdge(crease, { width: 3, height: 1, angleDegrees: 5 }))).toEqual([1, 1, 1]);
   });
 });
